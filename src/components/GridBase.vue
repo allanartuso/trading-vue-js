@@ -2,11 +2,55 @@
   <div :class="gridClass" :style="style">
     <canvas
       ref="canvas"
-      :style="style"
+      :style="{ backgroundColor: colors.back }"
       @mousemove="mousemove"
       @mouseout="mouseout"
       @mouseup="mouseup"
       @mousedown="mousedown"
+    />
+    <!-- <crosshair
+      ref="crosshair"
+      :cursor="cursor"
+      :colors="colors"
+      :layout="layout"
+      :interval="interval"
+      :sub="sub"
+      :font="font"
+      :config="config"
+      @new-grid-layer="newGridLayer"
+      @delete-grid-layer="deleteGridLayer"
+      @show-grid-layer="showGridLayer"
+      @redraw-grid="redrawGrid"
+      @layer-meta-props="layerMetaProps"
+      @custom-event="customEvent"
+    /> -->
+    <crosshair
+      ref="crosshair"
+      :cursor="cursor"
+      :colors="colors"
+      :layout="layout"
+      :interval="interval"
+      :sub="sub"
+      :font="font"
+      :config="config"
+      @new-grid-layer="newGridLayer"
+      @redraw-grid="redrawGrid"
+    />
+    <ux-layer
+      :id="grid_id"
+      :colors="colors"
+      :config="config"
+      :tv_id="tv_id"
+      :uxs="uxs"
+      :updater="updater"
+      @custom-event="uxCustomEvent"
+    />
+    <keyboard-listener
+      @register-kb-listener="registerKbListener"
+      @remove-kb-listener="removeKbListener"
+      @keyup="keyup"
+      @keydown="keydown"
+      @keypress="keypress"
     />
   </div>
 </template>
@@ -21,10 +65,15 @@ import * as Hammer from "hammerjs";
 import Hamster from "hamsterjs";
 import Utils from "../stuff/utils.js";
 import math from "../stuff/math.js";
+import Crosshair from "./Crosshair.vue";
+import UxLayer from "./UxLayer.vue";
+import KeyboardListener from "./KeyboardListener.vue";
 
 // Grid is good.
 export default {
   name: "GridBase",
+  components: { Crosshair, UxLayer, KeyboardListener },
+
   props: [
     "gridClass",
     "cursor",
@@ -35,6 +84,7 @@ export default {
     "interval",
     "shaders",
     "colors",
+    "uxs",
 
     "meta",
     "y_transform",
@@ -61,23 +111,34 @@ export default {
       offset_y: 0,
       deltas: 0, // Wheel delta events
       overlays: [],
-      style: {
-        left: this.position.x + "px",
-        top: this.position.y + "px",
-        position: "absolute",
-      },
+      style: {},
+      updater: Math.random(),
     };
   },
-  computed: {},
+  computed: {
+    is_active() {
+      return (
+        this.$props.cursor.t !== undefined &&
+        this.$props.cursor.grid_id === this.$props.grid_id
+      );
+    },
+  },
   created() {
     this.id = this.grid_id;
     this.layout = this.layoutGrids[this.id];
     this.wmode = this.SCROLL_WHEEL;
     this.range = this.propRange;
+
+    this.style = {
+      left: 0 + "px",
+      top: this.layout.offset + "px",
+      position: "absolute",
+    };
   },
 
   mounted() {
     this.canvas = this.$refs.canvas;
+    this.crosshair = this.$refs.crosshair;
     this.ctx = this.canvas.getContext("2d");
     this.$nextTick(() => {
       this.setup();
@@ -94,18 +155,42 @@ export default {
     if (this.hm) this.hm.unwheel();
   },
   methods: {
+    registerKbListener(e) {
+      if (!this.is_active) return;
+      this.$emit("register-kb-listener", e);
+    },
+    removeKbListener(e) {
+      if (!this.is_active) return;
+      this.$emit("remove-kb-listener", e);
+    },
+    keyup(e) {
+      this.propagate("keyup", e);
+    },
+    keydown(e) {
+      this.propagate("keydown", e);
+    },
+    keypress(e) {
+      this.propagate("keypress", e);
+    },
+    newGridLayer(e) {
+      this.new_layer(e);
+    },
+    redrawGrid() {
+      this.update();
+    },
+    uxCustomEvent(e) {
+      this.$emit("ux-custom-event", e);
+    },
     setup() {
-      const layout = this.layout;
-
       let dpr = window.devicePixelRatio || 1;
       this.canvas.style.width = `${this.attrs.width}px`;
       this.canvas.style.height = `${this.attrs.height}px`;
 
       // TODO: fix it, set directcly in the element? Look canvas.js create_canvas. Add elements that are inside hs, add overlays
       this.canvas.attrs = {
-        id: `${this.tv_id}-${this.grid_id}-canvas`,
-        width: layout.width,
-        height: layout.height,
+        id: `${this.tv_id}-grid-${this.grid_id}-canvas`,
+        width: this.layout.width,
+        height: this.layout.height,
         overflow: "hidden",
       };
 
@@ -127,7 +212,8 @@ export default {
         if (!ctx.measureTextOrg) {
           ctx.measureTextOrg = ctx.measureText;
         }
-        ctx.measureText = (text) => Utils.measureText(ctx, text, this.tv_id);
+        ctx.measureText = (text) =>
+          Utils.measureText(ctx, text, this.$props.tv_id);
       });
     },
     listeners() {
@@ -382,6 +468,10 @@ export default {
 
       this.grid();
 
+      if (this.crosshair) {
+        this.crosshair.draw(this.ctx);
+      }
+
       let overlays = [];
       overlays.push(...this.overlays);
 
@@ -397,10 +487,6 @@ export default {
         if (r.post_draw) r.post_draw(this.ctx);
         this.ctx.restore();
       });
-
-      if (this.crosshair) {
-        this.crosshair.renderer.draw(this.ctx);
-      }
     },
     apply_shaders() {
       let layout = this.layoutGrids[this.id];

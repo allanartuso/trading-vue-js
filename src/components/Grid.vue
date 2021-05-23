@@ -1,37 +1,61 @@
 <template>
   <!-- Chart components combined together -->
-  <grid-base
-    ref="renderer"
-    :gridClass="`trading-vue-grid-${grid_id}`"
-    :cursor="cursor"
-    :layoutGrids="layout.grids"
-    :grid_id="grid_id"
-    :propRange="range"
-    :sub="sub"
-    :interval="interval"
-    :shaders="shaders"
-    :colors="colors"
-    :meta="meta"
-    :y_transform="y_transform"
-    :config="config"
-    :tv_id="tv_id"
-    :font="font"
-    :attrs="{ width, height }"
-    :position="{
-      x: 0,
-      y: layout.offset || 0,
-    }"
-    :SCROLL_WHEEL="config.SCROLL_WHEEL"
-    :MIN_ZOOM="config.MIN_ZOOM"
-    :MAX_ZOOM="config.MAX_ZOOM"
-    :ZOOM_MODE="config.ZOOM_MODE"
-    @range-changed="range_changed"
-    @cursor-changed="cursor_changed"
-    @cursor-locked="cursor_locked"
-    @custom-event="emit_custom_event"
-    @sidebar-transform="sidebar_transform"
-    @rezoom-range="rezoom_range"
-  />
+  <div>
+    <grid-base
+      ref="renderer"
+      :gridClass="`trading-vue-grid-${grid_id}`"
+      :cursor="cursor"
+      :layoutGrids="layout.grids"
+      :grid_id="grid_id"
+      :propRange="range"
+      :sub="sub"
+      :interval="interval"
+      :shaders="shaders"
+      :colors="colors"
+      :meta="meta"
+      :y_transform="y_transform"
+      :config="config"
+      :tv_id="tv_id"
+      :font="font"
+      :attrs="{ width, height }"
+      :SCROLL_WHEEL="config.SCROLL_WHEEL"
+      :MIN_ZOOM="config.MIN_ZOOM"
+      :MAX_ZOOM="config.MAX_ZOOM"
+      :ZOOM_MODE="config.ZOOM_MODE"
+      :overlaysData="overlaysData"
+      :overlaysList="overlaysList"
+      @range-changed="range_changed"
+      @cursor-changed="cursor_changed"
+      @cursor-locked="cursor_locked"
+      @custom-event="emit_custom_event"
+      @sidebar-transform="sidebar_transform"
+      @rezoom-range="rezoom_range"
+      @ux-custom-event="emit_ux_event"
+      @register-kb-listener="registerKbListener"
+      @remove-kb-listener="removeKbListener"
+    />
+    <overlays
+      :layoutGrids="layout.grids"
+      :overlaysData="overlaysData"
+      :grid_id="grid_id"
+      :meta="meta"
+      :registry="registry"
+      :overlaysList="overlaysList"
+      :cursor="cursor"
+      :sub="sub"
+      :interval="interval"
+      :colors="colors"
+      :config="config"
+      :font="font"
+      :shaders="shaders"
+      @new-grid-layer="new_layer"
+      @delete-grid-layer="del_layer"
+      @show-grid-layer="showGridLayer"
+      @redraw-grid="redraw"
+      @layer-meta-props="layerMetaProps"
+      @custom-event="emit_custom_event"
+    />
+  </div>
 </template>
 
 <script>
@@ -39,6 +63,7 @@
 
 import UxList from "../mixins/uxlist.js";
 import GridBase from "./GridBase.vue";
+import Overlays from "./Overlays.vue";
 
 import Spline from "./overlays/Spline.vue";
 import Splines from "./overlays/Splines.vue";
@@ -54,7 +79,7 @@ import RangeTool from "./overlays/RangeTool.vue";
 
 export default {
   name: "Grid",
-  components: { GridBase },
+  components: { GridBase, Overlays },
   mixins: [UxList],
   props: [
     "sub",
@@ -78,38 +103,13 @@ export default {
 
   data() {
     return {
-      layer_events: {},
-      keyboard_events: {
-        "register-kb-listener": (event) => {
-          this.$emit("register-kb-listener", event);
-        },
-        "remove-kb-listener": (event) => {
-          this.$emit("remove-kb-listener", event);
-        },
-        keyup: (event) => {
-          if (!this.is_active) return;
-          if (this.$refs.renderer)
-            this.$refs.renderer.propagate("keyup", event);
-        },
-        keydown: (event) => {
-          if (!this.is_active) return; // TODO: is this neeeded?
-          if (this.$refs.renderer)
-            this.$refs.renderer.propagate("keydown", event);
-        },
-        keypress: (event) => {
-          if (!this.is_active) return;
-          if (this.$refs.renderer)
-            this.$refs.renderer.propagate("keypress", event);
-        },
-      },
+      overlaysData: this.$props.data,
+      list: [],
     };
   },
   computed: {
-    is_active() {
-      return (
-        this.$props.cursor.t !== undefined &&
-        this.$props.cursor.grid_id === this.$props.grid_id
-      );
+    registry() {
+      return this._registry;
     },
   },
   watch: {
@@ -166,7 +166,7 @@ export default {
 
   created() {
     // List of all possible overlays (builtin + custom)
-    this._list = [
+    this.overlaysList = [
       Spline,
       Splines,
       Range,
@@ -184,7 +184,7 @@ export default {
     // We need to know which components we will use.
     // Custom overlay components overwrite built-ins:
     var tools = [];
-    this._list.forEach((x, i) => {
+    this.overlaysList.forEach((x, i) => {
       let use_for = x.methods.use_for();
       if (x.methods.tool)
         tools.push({
@@ -202,21 +202,20 @@ export default {
     this.$on("custom-event", (e) => this.on_ux_event(e, "grid"));
   },
 
-  mounted() {
-    this.layer_events = {
-      "new-grid-layer": this.new_layer,
-      "delete-grid-layer": this.del_layer,
-      "show-grid-layer": (d) => {
-        if (this.$refs.renderer) this.$refs.renderer.show_hide_layer(d);
-        this.redraw();
-      },
-      "redraw-grid": this.$refs.renderer.update,
-      "layer-meta-props": (d) => this.$emit("layer-meta-props", d),
-      "custom-event": (d) => this.$emit("custom-event", d),
-    };
-  },
-
   methods: {
+    showGridLayer(e) {
+      this.renderer.show_hide_layer(e);
+      this.redraw();
+    },
+    layerMetaProps(e) {
+      this.$emit("layer-meta-props", e);
+    },
+    registerKbListener(e) {
+      this.$emit("register-kb-listener", e);
+    },
+    removeKbListener(e) {
+      this.$emit("remove-kb-listener", e);
+    },
     redraw() {
       if (this.$refs.renderer) this.$refs.renderer.update();
     },
@@ -255,80 +254,9 @@ export default {
       });
       this.remove_all_ux(layer);
     },
-    common_props() {
-      return {
-        cursor: this.$props.cursor,
-        colors: this.$props.colors,
-        layout: this.$props.layout.grids[this.$props.grid_id],
-        interval: this.$props.interval,
-        sub: this.$props.sub,
-        font: this.$props.font,
-        config: this.$props.config,
-      };
-    },
     emit_ux_event(e) {
       let e_pass = this.on_ux_event(e, "grid");
       if (e_pass) this.$emit("custom-event", e);
-    },
-
-    // TODO: see how to use these two functions
-    get_overlays(h) {
-      // Distributes overlay data & settings according
-      // to this._registry; returns compo list
-      let comp_list = [],
-        count = {};
-
-      for (var d of this.$props.data) {
-        let comp = this._list[this._registry[d.type]];
-        if (comp) {
-          if (comp.methods.calc) {
-            comp = this.inject_renderer(comp);
-          }
-          comp_list.push({
-            cls: comp,
-            type: d.type,
-            data: d.data,
-            settings: d.settings,
-            i0: d.i0,
-            tf: d.tf,
-            last: d.last,
-          });
-          count[d.type] = 0;
-        }
-      }
-      return comp_list.map((x, i) =>
-        h(x.cls, {
-          on: this.layer_events,
-          attrs: Object.assign(this.common_props(), {
-            id: `${x.type}_${count[x.type]++}`,
-            type: x.type,
-            data: x.data,
-            settings: x.settings,
-            i0: x.i0,
-            tf: x.tf,
-            num: i,
-            grid_id: this.$props.grid_id,
-            meta: this.$props.meta,
-            last: x.last,
-          }),
-        })
-      );
-    },
-    // Replace the current comp with 'renderer'
-    inject_renderer(comp) {
-      let src = comp.methods.calc();
-      if (!src.conf || !src.conf.renderer || comp.__renderer__) {
-        return comp;
-      }
-
-      // Search for an overlay with the target 'name'
-      let f = this._list.find((x) => x.name === src.conf.renderer);
-      if (!f) return comp;
-
-      comp.mixins.push(f);
-      comp.__renderer__ = src.conf.renderer;
-
-      return comp;
     },
   },
 };

@@ -8,22 +8,6 @@
       @mouseup="mouseup"
       @mousedown="mousedown"
     />
-    <!-- <crosshair
-      ref="crosshair"
-      :cursor="cursor"
-      :colors="colors"
-      :layout="layout"
-      :interval="interval"
-      :sub="sub"
-      :font="font"
-      :config="config"
-      @new-grid-layer="newGridLayer"
-      @delete-grid-layer="deleteGridLayer"
-      @show-grid-layer="showGridLayer"
-      @redraw-grid="redrawGrid"
-      @layer-meta-props="layerMetaProps"
-      @custom-event="customEvent"
-    /> -->
     <crosshair
       ref="crosshair"
       :cursor="cursor"
@@ -52,6 +36,27 @@
       @keydown="keydown"
       @keypress="keypress"
     />
+    <overlays
+      :layoutGrids="layoutGrids"
+      :overlaysCompList="overlaysCompList"
+      :overlaysCount="overlaysCount"
+      :grid_id="grid_id"
+      :meta="meta"
+      :registry="registry"
+      :cursor="cursor"
+      :sub="sub"
+      :interval="interval"
+      :colors="colors"
+      :config="config"
+      :font="font"
+      :shaders="shaders"
+      @new-grid-layer="newGridLayer"
+      @delete-grid-layer="deleteGridLayer"
+      @show-grid-layer="showGridLayer"
+      @redraw-grid="redrawGrid"
+      @layer-meta-props="layerMetaProps"
+      @custom-event="customEvent"
+    />
   </div>
 </template>
 
@@ -68,11 +73,12 @@ import math from "../stuff/math.js";
 import Crosshair from "./Crosshair.vue";
 import UxLayer from "./UxLayer.vue";
 import KeyboardListener from "./KeyboardListener.vue";
+import Overlays from "./Overlays.vue";
 
 // Grid is good.
 export default {
   name: "GridBase",
-  components: { Crosshair, UxLayer, KeyboardListener },
+  components: { Crosshair, UxLayer, KeyboardListener, Overlays },
 
   props: [
     "gridClass",
@@ -85,6 +91,9 @@ export default {
     "shaders",
     "colors",
     "uxs",
+    "registry",
+    "overlaysData",
+    "overlaysList",
 
     "meta",
     "y_transform",
@@ -111,6 +120,8 @@ export default {
       offset_y: 0,
       deltas: 0, // Wheel delta events
       overlays: [],
+      overlaysCompList: [],
+      overlaysCount: {},
       style: {},
       updater: Math.random(),
     };
@@ -140,6 +151,9 @@ export default {
     this.canvas = this.$refs.canvas;
     this.crosshair = this.$refs.crosshair;
     this.ctx = this.canvas.getContext("2d");
+    const { comp_list, count } = this.get_overlays();
+    this.overlaysCompList = comp_list;
+    this.overlaysCount = count;
     this.$nextTick(() => {
       this.setup();
       this.listeners();
@@ -155,6 +169,18 @@ export default {
     if (this.hm) this.hm.unwheel();
   },
   methods: {
+    customEvent(s) {
+      this.$emit("custom-event", s);
+    },
+    layerMetaProps(e) {
+      this.$emit("layer-meta-props", e);
+    },
+    showGridLayer(e) {
+      this.$emit("show-grid-layer", e);
+    },
+    deleteGridLayer(e) {
+      this.$emit("delete-grid-layer", e);
+    },
     registerKbListener(e) {
       if (!this.is_active) return;
       this.$emit("register-kb-listener", e);
@@ -697,6 +723,52 @@ export default {
           keys.emit(name, event);
         }
       }
+    },
+
+    // TODO: see how to use these two functions
+    get_overlays() {
+      // Distributes overlay data & settings according
+      // to this._registry; returns compo list
+      let comp_list = [],
+        count = {};
+
+      for (var d of this.overlaysData) {
+        let comp = this.overlaysList[this.registry[d.type]];
+        if (comp) {
+          if (comp.methods.calc) {
+            comp = this.inject_renderer(comp);
+          }
+
+          comp_list.push({
+            cls: comp,
+            type: d.type,
+            data: d.data,
+            settings: d.settings,
+            i0: d.i0,
+            tf: d.tf,
+            last: d.last,
+          });
+
+          count[d.type] = 0;
+        }
+      }
+
+      return { comp_list, count };
+    },
+    inject_renderer(comp) {
+      let src = comp.methods.calc();
+      if (!src.conf || !src.conf.renderer || comp.__renderer__) {
+        return comp;
+      }
+
+      // Search for an overlay with the target 'name'
+      let f = this.overlaysList.find((x) => x.name === src.conf.renderer);
+      if (!f) return comp;
+
+      comp.mixins.push(f);
+      comp.__renderer__ = src.conf.renderer;
+
+      return comp;
     },
   },
 };

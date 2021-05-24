@@ -24,6 +24,7 @@
       :ZOOM_MODE="config.ZOOM_MODE"
       :overlaysData="overlaysData"
       :overlaysList="overlaysList"
+      :registry="registry"
       @range-changed="range_changed"
       @cursor-changed="cursor_changed"
       @cursor-locked="cursor_locked"
@@ -33,27 +34,9 @@
       @ux-custom-event="emit_ux_event"
       @register-kb-listener="registerKbListener"
       @remove-kb-listener="removeKbListener"
-    />
-    <overlays
-      :layoutGrids="layout.grids"
-      :overlaysData="overlaysData"
-      :grid_id="grid_id"
-      :meta="meta"
-      :registry="registry"
-      :overlaysList="overlaysList"
-      :cursor="cursor"
-      :sub="sub"
-      :interval="interval"
-      :colors="colors"
-      :config="config"
-      :font="font"
-      :shaders="shaders"
-      @new-grid-layer="new_layer"
       @delete-grid-layer="del_layer"
       @show-grid-layer="showGridLayer"
-      @redraw-grid="redraw"
       @layer-meta-props="layerMetaProps"
-      @custom-event="emit_custom_event"
     />
   </div>
 </template>
@@ -63,7 +46,6 @@
 
 import UxList from "../mixins/uxlist.js";
 import GridBase from "./GridBase.vue";
-import Overlays from "./Overlays.vue";
 
 import Spline from "./overlays/Spline.vue";
 import Splines from "./overlays/Splines.vue";
@@ -79,7 +61,7 @@ import RangeTool from "./overlays/RangeTool.vue";
 
 export default {
   name: "Grid",
-  components: { GridBase, Overlays },
+  components: { GridBase },
   mixins: [UxList],
   props: [
     "sub",
@@ -130,6 +112,7 @@ export default {
       },
       deep: true,
     },
+    // TODO: should be part of grid base?
     overlays: {
       // Track changes in calc() functions
       handler: function(ovs) {

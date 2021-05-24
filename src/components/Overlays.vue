@@ -2,12 +2,11 @@
 export default {
   name: "Overlays",
   props: [
-    "overlaysData",
     "layoutGrids",
     "grid_id",
-    "overlaysList",
-    "registry",
+    "overlaysCompList",
     "meta",
+    "overlaysCount",
 
     "cursor",
     "colors",
@@ -31,6 +30,7 @@ export default {
       "layer-meta-props": (d) => this.$emit("layer-meta-props", d),
       "custom-event": (d) => this.$emit("custom-event", d),
     };
+    this.count = this.overlaysCount;
   },
   methods: {
     common_props() {
@@ -44,36 +44,13 @@ export default {
         config: this.$props.config,
       };
     },
-    // TODO: see how to use these two functions
-    get_overlays(h) {
-      // Distributes overlay data & settings according
-      // to this._registry; returns compo list
-      let comp_list = [],
-        count = {};
 
-      for (var d of this.overlaysData) {
-        let comp = this.overlaysList[this.registry[d.type]];
-        if (comp) {
-          if (comp.methods.calc) {
-            comp = this.inject_renderer(comp);
-          }
-          comp_list.push({
-            cls: comp,
-            type: d.type,
-            data: d.data,
-            settings: d.settings,
-            i0: d.i0,
-            tf: d.tf,
-            last: d.last,
-          });
-          count[d.type] = 0;
-        }
-      }
-      return comp_list.map((x, i) =>
+    createOverlays(h) {
+      return (this.overlaysCompList || []).map((x, i) =>
         h(x.cls, {
           on: this.layer_events,
           attrs: Object.assign(this.common_props(), {
-            id: `${x.type}_${count[x.type]++}`,
+            id: `${x.type}_${this.count[x.type]++}`,
             type: x.type,
             data: x.data,
             settings: x.settings,
@@ -88,21 +65,6 @@ export default {
       );
     },
     // Replace the current comp with 'renderer'
-    inject_renderer(comp) {
-      let src = comp.methods.calc();
-      if (!src.conf || !src.conf.renderer || comp.__renderer__) {
-        return comp;
-      }
-
-      // Search for an overlay with the target 'name'
-      let f = this.overlaysList.find((x) => x.name === src.conf.renderer);
-      if (!f) return comp;
-
-      comp.mixins.push(f);
-      comp.__renderer__ = src.conf.renderer;
-
-      return comp;
-    },
   },
   render(h) {
     const layout = this.layoutGrids[this.grid_id];
@@ -118,6 +80,8 @@ export default {
       },
     };
 
+    const createOverlays = this.createOverlays(h);
+
     return h(
       "div",
       {
@@ -128,7 +92,7 @@ export default {
           position: "absolute",
         },
       },
-      this.get_overlays(h)
+      createOverlays
     );
   },
 };

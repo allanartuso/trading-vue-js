@@ -51,6 +51,7 @@ export default {
       canvasStyle: {},
       sidebarId: undefined,
       canvasId: undefined,
+      canvasHeight: undefined,
     };
   },
   watch: {
@@ -69,16 +70,16 @@ export default {
     rerender() {
       this.$nextTick(() => this.update());
     },
-    width(val) {
-      this._attrs.width = val;
+    width() {
       this.setup();
     },
     height(val) {
-      this._attrs.height = val;
+      this.canvasHeight = val;
       this.setup();
     },
   },
   created() {
+    this.PANHEIGHT = this.config.PANHEIGHT;
     this.sidebarId = `sidebar-${this.grid_id}`;
     this.divClass = `trading-vue-${this.sidebarId}`;
     this.layoutGrid = this.$props.layout.grids[this.grid_id];
@@ -92,6 +93,7 @@ export default {
       backgroundColor: this.$props.colors.back,
     };
     this.canvasId = `${this.$props.tv_id}-${this.sidebarId}-canvas`;
+    this.canvasHeight = this.layoutGrid.height;
   },
   mounted() {
     this.canvas = this.$refs.canvas;
@@ -109,7 +111,7 @@ export default {
     setup() {
       let dpr = window.devicePixelRatio || 1;
       this.canvas.style.width = `${this.width}px`;
-      this.canvas.style.height = `${this.layoutGrid.height}px`;
+      this.canvas.style.height = `${this.canvasHeight}px`;
       if (dpr < 1) dpr = 1; // Realy ? That's it? Issue #63
       this.$nextTick(() => {
         var rect = this.canvas.getBoundingClientRect();
